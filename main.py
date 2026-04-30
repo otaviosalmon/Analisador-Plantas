@@ -15,13 +15,40 @@ MIN_LEAF_AREA   = 3000
 FONT            = cv2.FONT_HERSHEY_SIMPLEX
 OVERLAY_ALPHA   = 0.55
 
-
 STATUS_TABLE = [
-    (85, "SAUDÁVEL",   (34, 197,  94)),
-    (60, "LEVEMENTE ESTRESSADA", (250, 204,  21)),
-    (35, "ESTRESSADA", (249, 115,  22)),
-    (  0, "DOENTE",     (239,  68,  68)),
+    (85, "SAUDÁVEL",              (34, 197,  94)),
+    (60, "LEVEMENTE ESTRESSADA",  (250, 204,  21)),
+    (35, "ESTRESSADA",            (249, 115,  22)),
+    (  0, "DOENTE",               (239,  68,  68)),
 ]
+
+CAMERA_BACKENDS = [
+    (0, cv2.CAP_DSHOW),
+    (0, cv2.CAP_MSMF),
+    (0, cv2.CAP_ANY),
+    (1, cv2.CAP_DSHOW),
+    (1, cv2.CAP_ANY),
+]
+
+
+def open_camera():
+    for index, backend in CAMERA_BACKENDS:
+        cap = cv2.VideoCapture(index, backend)
+        if cap.isOpened():
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                label = {
+                    cv2.CAP_DSHOW: "DirectShow",
+                    cv2.CAP_MSMF:  "MSMF",
+                    cv2.CAP_ANY:   "Auto",
+                }.get(backend, "?")
+                print(f"Câmera aberta — índice {index}, backend {label}")
+                return cap
+        cap.release()
+    raise RuntimeError(
+        "Nenhuma câmera encontrada.\n"
+        "Verifique se a câmera não está sendo usada por outro programa."
+    )
 
 
 def isolate_leaf_mask(hsv):
@@ -74,18 +101,15 @@ def draw_bar(frame, score, x, y, bar_w=220, bar_h=18):
 
 def draw_panel(frame, score, label, color_rgb, px_data):
     h, w = frame.shape[:2]
-    panel_h = 140
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (w, panel_h), (20, 20, 20), -1)
+    cv2.rectangle(overlay, (0, 0), (w, 140), (20, 20, 20), -1)
     cv2.addWeighted(overlay, OVERLAY_ALPHA, frame, 1 - OVERLAY_ALPHA, 0, frame)
 
     bgr = (color_rgb[2], color_rgb[1], color_rgb[0])
 
     cv2.putText(frame, "Monitor de Saude de Plantas",
                 (12, 24), FONT, 0.6, (200, 200, 200), 1)
-
     cv2.putText(frame, label, (12, 58), FONT, 0.75, bgr, 2)
-
     cv2.putText(frame, "Saude foliar:", (12, 84), FONT, 0.45, (180, 180, 180), 1)
     draw_bar(frame, score, 12, 90)
 
@@ -99,21 +123,17 @@ def draw_panel(frame, score, label, color_rgb, px_data):
 def highlight_regions(frame, leaf_mask, green_mask, yellow_mask, brown_mask):
     overlay = frame.copy()
 
-    green_region  = cv2.bitwise_and(frame, frame, mask=green_mask)
-    yellow_region = cv2.bitwise_and(frame, frame, mask=yellow_mask)
-    brown_region  = cv2.bitwise_and(frame, frame, mask=brown_mask)
+    tinted_green  = overlay.copy()
+    tinted_yellow = overlay.copy()
+    tinted_brown  = overlay.copy()
 
-    tinted_green  = green_region.copy()
-    tinted_yellow = yellow_region.copy()
-    tinted_brown  = brown_region.copy()
-
-    tinted_green[green_mask  > 0] = [0, 180, 0]
+    tinted_green[green_mask   > 0] = [0, 180, 0]
     tinted_yellow[yellow_mask > 0] = [0, 200, 200]
-    tinted_brown[brown_mask  > 0] = [0, 80, 160]
+    tinted_brown[brown_mask   > 0] = [0, 80, 160]
 
-    cv2.addWeighted(tinted_green,  0.35, overlay, 1.0, 0, overlay)
-    cv2.addWeighted(tinted_yellow, 0.35, overlay, 1.0, 0, overlay)
-    cv2.addWeighted(tinted_brown,  0.35, overlay, 1.0, 0, overlay)
+    cv2.addWeighted(tinted_green,  0.35, overlay, 0.65, 0, overlay)
+    cv2.addWeighted(tinted_yellow, 0.35, overlay, 0.65, 0, overlay)
+    cv2.addWeighted(tinted_brown,  0.35, overlay, 0.65, 0, overlay)
 
     contours, _ = cv2.findContours(leaf_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     for cnt in contours:
@@ -124,15 +144,14 @@ def highlight_regions(frame, leaf_mask, green_mask, yellow_mask, brown_mask):
 
 
 def main():
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        raise RuntimeError("Câmera não encontrada.")
+    cap = open_camera()
 
     print("Monitor iniciado — pressione [Q] para sair.")
 
     while True:
         ret, frame = cap.read()
-        if not ret:
+        if not ret or frame is None:
+            print("Falha ao capturar frame — encerrando.")
             break
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
