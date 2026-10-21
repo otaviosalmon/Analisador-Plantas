@@ -26,7 +26,7 @@ Identificar quando uma planta está com deficiência nutricional, hídrica ou do
 
 ```bash
 # 1. Clone o repositório
-git clone https://github.com/seu-usuario/plant-health-monitor.git
+git clone https://github.com/otaviosalmon/plant-health-monitor.git
 cd plant-health-monitor
 
 # 2. (Opcional) Ambiente virtual
